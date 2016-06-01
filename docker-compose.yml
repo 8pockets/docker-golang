@@ -9,4 +9,10 @@ app:
   command: go run main.go
 
 redis:
+  restart: always
   image: redis
+  ports:
+    - "6379:6379"
+  volumes:
+    - ./data/redis/:/data
+  command: redis-server --appendonly yes

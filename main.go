@@ -10,12 +10,14 @@ import (
 
 func main() {
 	redi, err := redis.Dial("tcp", "redis:6379")
+
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		res, err := redi.Do("incr", "counter")
+
 		if err != nil {
 			w.WriteHeader(500)
 			w.Write([]byte(err.Error()))
@@ -23,7 +25,7 @@ func main() {
 		}
 
 		if res, ok := res.(int64); ok {
-			w.Write([]byte(fmt.Sprintf("counter: %d", res)))
+			w.Write([]byte(fmt.Sprintf("count is : %d", res)))
 		} else {
 			w.WriteHeader(500)
 			w.Write([]byte("unexpected value"))
