@@ -1,4 +1,4 @@
-app:
+go-app:
   build: .
   ports:
     - "8881:5000"

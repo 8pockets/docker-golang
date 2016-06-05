@@ -2,34 +2,21 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
-	"github.com/garyburd/redigo/redis"
+	"goji.io"
+	"goji.io/pat"
+	"golang.org/x/net/context"
 )
 
+func hello(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	name := pat.Param(ctx, "name")
+	fmt.Fprintf(w, "Hello, %s!", name)
+}
+
 func main() {
-	redi, err := redis.Dial("tcp", "redis:6379")
+	mux := goji.NewMux()
+	mux.HandleFuncC(pat.Get("/hello/:name"), hello)
 
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		res, err := redi.Do("incr", "counter")
-
-		if err != nil {
-			w.WriteHeader(500)
-			w.Write([]byte(err.Error()))
-			return
-		}
-
-		if res, ok := res.(int64); ok {
-			w.Write([]byte(fmt.Sprintf("count is : %d", res)))
-		} else {
-			w.WriteHeader(500)
-			w.Write([]byte("unexpected value"))
-		}
-	})
-	log.Fatal(http.ListenAndServe(":5000", nil))
+	http.ListenAndServe(":5000", mux)
 }
