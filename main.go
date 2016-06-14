@@ -5,7 +5,9 @@ import (
 	"log"
 	//	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"encoding/json"
@@ -14,31 +16,17 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/PuerkitoBio/goquery"
+	"github.com/patrickmn/go-cache"
 	"goji.io"
 	"goji.io/pat"
 	"golang.org/x/net/context"
-
-	"github.com/PuerkitoBio/goquery"
-	"github.com/patrickmn/go-cache"
 )
 
 const (
 	HATEBU_URL  = "http://b.hatena.ne.jp/entrylist"
 	TABELOG_URL = "http://tabelog.com/"
 )
-
-//type Item struct {
-//	Title    string `xml:"title"`
-//	Url      string `xml:"rdf:about, attr"`
-//	Bookmark int    `xml:"hatena:bookmarkcount"`
-//}
-//type Tabeloglist struct {
-//	XMLName     xml.Name `xml:"rss"`
-//	Title       string   `xml:"channel>title"`
-//	Link        string   `xml:"channel>link"`
-//	Description string   `xml:"channel>description"`
-//	ItemList    []Item   `xml:"item"`
-//}
 
 //XML struct
 type TabelogXml struct {
@@ -91,17 +79,18 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	ca := cache.New(10*time.Minute, 30*time.Second)
 
 	if x, found := ca.Get(param); found {
+		log.Print("Cache Use !")
 		fmt.Fprintf(w, "%s", x)
 		return
 	}
 
 	//hatebu API request
-	body = getHatebuRssFeed(param)
+	body := getHatebuRssFeed(param)
 
 	//XML Parse
 	//ex.) https://golang.org/pkg/encoding/xml/#example_Unmarshal
 	v := TabelogXml{}
-	err = xml.Unmarshal([]byte(body), &v)
+	err := xml.Unmarshal([]byte(body), &v)
 	if err != nil {
 		fmt.Printf("error: %v", err)
 		return
@@ -119,7 +108,8 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		bookmark := bookmark.Count
 
 		//URL Validation. ( Valid url is http://tabelog.com/tokyo/A1301/A130101/13002457/ )
-		if m, _ := regexp.MatchString("^http:\\/\\/tabelog\\.com\\/[a-zA-Z0-9]+\\/[a-zA-Z0-9]+\\/[a-zA-Z0-9]+\\/[a-zA-Z0-9]+(|\\/)$", url); !m {
+		matchPattern := "^http:\\/\\/tabelog\\.com\\/[a-zA-Z0-9]+\\/[a-zA-Z0-9]+\\/[a-zA-Z0-9]+\\/[a-zA-Z0-9]+(|\\/)$"
+		if m, _ := regexp.MatchString(matchPattern, url); !m {
 			continue
 		}
 
@@ -136,7 +126,11 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	}
 
 	//Cache Set
-	ca.Set(param, b, cache.DefaultExpiration)
+	ca.Set(param, b, cache.NoExpiration)
+
+	if _, ca_result := ca.Get(param); ca_result {
+		fmt.Print("Cache Correct!")
+	}
 
 	//output
 	fmt.Fprintf(w, "%s", b)
@@ -145,25 +139,31 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 /*
 tabelogのユーザー投稿の最初画像をスクレイピング
 */
-func getGroumetInfo(t *Itemslice) *Itemslice {
+func getGroumetInfo(t Itemslice) Itemslice {
 
-	ch := make(chan *Itemslice, len(t.Items))
+	var wg sync.WaitGroup
 
-	responses := []*Itemslice{}
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	s := time.Now()
 
-	for _, v := range t.Items {
+	for i, v := range t.Items {
 
-		request_url = v.Url
-		go func(request_url string) {
+		request_url := v.Url
 
-			image, err_request := goquery.NewDocument(v.Url + "dtlphotolst/1/smp2/D-like/")
+		wg.Add(1)
+
+		go func(request_url string, i int) {
+
+			defer wg.Done()
+
+			image, err_request := goquery.NewDocument(request_url + "dtlphotolst/1/smp2/D-like/")
 
 			if err_request != nil {
 				fmt.Print("url scarapping failed")
 			}
 
 			//Parse HTML By goquery module
-			img_url, exists := image.Find("ul.rstdtl-photo__content > li.thum-photobox .thum-photobox__img-area img").First().Attr("src")
+			img_url, exists := image.Find("ul.rstdtl-photo__content > li.thum-photobox .thum-photobox__img img").First().Attr("src")
 			star := image.Find("div.rdheader-rating__score b.tb-rating__val span").First().Text()
 			station := image.Find("div.rdheader-subinfo div.linktree__parent span").First().Text()
 
@@ -171,33 +171,26 @@ func getGroumetInfo(t *Itemslice) *Itemslice {
 				fmt.Print("Not Existing Data: " + request_url)
 			}
 
-			v.Img_url = img_url
-			v.Star = star
-			v.Station = station
+			t.Items[i].Img_url = img_url
+			t.Items[i].Star = star
+			t.Items[i].Station = station
 
-			ch <- &Item{Img_url: img_url, Star: star, Station: station}
+			log.Print(request_url + " , " + img_url + " , " + star + " , " + station)
+			log.Printf("running %d goroutines", runtime.NumGoroutine())
 
-		}(request_url)
-
-		for {
-			select {
-			case r := <-ch:
-				fmt.Printf("%s was fetched\n", r.Img_url)
-				responses = append(responses, r)
-				if len(responses) == len(urls) {
-					return responses
-				}
-			case <-time.After(50 * time.Millisecond):
-				fmt.Printf(".")
-			}
-		}
+		}(request_url, i)
 
 	} //end t.Items for loop
 
-	return responses
+	wg.Wait()
+
+	e := time.Now().Sub(s)
+	fmt.Println(e)
+
+	return t
 }
 
-func getHatebuRssFeed(param string) {
+func getHatebuRssFeed(param string) []byte {
 
 	//APi Request
 	values := url.Values{}
@@ -207,8 +200,7 @@ func getHatebuRssFeed(param string) {
 
 	resp, err := http.Get(HATEBU_URL + "?" + values.Encode())
 	if err != nil {
-		fmt.Println(err)
-		return
+		log.Fatal(err)
 	}
 
 	// 関数を抜ける際に必ずresponseをcloseするようにdeferでcloseを呼ぶ
@@ -218,7 +210,6 @@ func getHatebuRssFeed(param string) {
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatal(err)
-		return
 	}
 
 	return body
@@ -226,6 +217,8 @@ func getHatebuRssFeed(param string) {
 }
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
 	mux := goji.NewMux()
 	mux.HandleFuncC(pat.Get("/groumet/list/"), groumet)
 
