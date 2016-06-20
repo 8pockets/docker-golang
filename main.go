@@ -6,6 +6,7 @@ import (
 	//	"reflect"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"goji.io"
 	"goji.io/pat"
 	"golang.org/x/net/context"
+	//	do "gopkg.in/godo.v2"
 )
 
 const (
@@ -141,10 +143,13 @@ tabelogのユーザー投稿の最初画像をスクレイピング
 */
 func getGroumetInfo(t Itemslice) Itemslice {
 
-	var wg sync.WaitGroup
-
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	s := time.Now()
+
+	var wg sync.WaitGroup
+	//make channel
+
+	log.Printf(strconv.Itoa(len(t.Items)))
 
 	for i, v := range t.Items {
 
@@ -175,7 +180,7 @@ func getGroumetInfo(t Itemslice) Itemslice {
 			t.Items[i].Star = star
 			t.Items[i].Station = station
 
-			log.Print(request_url + " , " + img_url + " , " + star + " , " + station)
+			//log.Print(request_url + " , " + img_url + " , " + star + " , " + station)
 			log.Printf("running %d goroutines", runtime.NumGoroutine())
 
 		}(request_url, i)
@@ -217,6 +222,9 @@ func getHatebuRssFeed(param string) []byte {
 }
 
 func main() {
+	//godo (task runner)
+	//	do.Godo(tasks)
+
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	mux := goji.NewMux()
@@ -224,3 +232,11 @@ func main() {
 
 	http.ListenAndServe(":5000", mux)
 }
+
+//func tasks(p *do.Project) {
+//	p.Task("server", nil, func(c *do.Context) {
+//		// rebuilds and restarts when a watched file changes
+//		c.Start("main.go", do.M{"$in": "./"})
+//	}).Src("*.go", "**/*.go").
+//		Debounce(3000)
+//}
