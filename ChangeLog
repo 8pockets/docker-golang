@@ -1,0 +1,13 @@
+#ChangeLog
+
+#ToDoList
+・godepでパッケージ管理する
+https://github.com/tools/godep
+・マウント(-v)をdockerfileに統一
+・contextを使ってgorountine処理
+・godo serverだと遅いのでもっと処理速度出せるようにする。
+・redisで中に首都圏の駅データを入れたい。その処理もgoで
+・XMLとJSONの読み書きどうにかしたい
+・綺麗なtypeファイルわけをしたい
+
+・goroutineの関数の設計として、func process(ctx context.Context) error {}のようにタイムアウト時にエラーを返す関数設計方法がいいみたいなので、その方向で書き直す。

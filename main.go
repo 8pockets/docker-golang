@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
+	//"sync"
 	"time"
 
 	"encoding/json"
@@ -22,7 +22,6 @@ import (
 	"goji.io"
 	"goji.io/pat"
 	"golang.org/x/net/context"
-	//	do "gopkg.in/godo.v2"
 )
 
 const (
@@ -58,11 +57,9 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	//URLの中の変数をとる時に使う
 	//	name := pat.Param(ctx, "name")
 
-	//http://153.121.33.54:8881/groumet/list/?area=tokyo.A1301.A130101.R3368
-
-	//http://stackoverflow.com/questions/15407719/in-gos-http-package-how-do-i-get-the-query-string-on-a-post-request
 	q := r.URL.Query()["area"]
 
 	//第４引数を-1にすることで対象範囲が全てになる
@@ -70,19 +67,18 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 
 	param_slice := strings.Split(area, "/")
 
-	//最後のパラメータを削除して、"/"で繋いだStringに変換
+	//最初から３つ目までのパラメータだけ使用
 	param := strings.Join(param_slice[:3], "/")
 
 	//変数の型を調べる
 	//log.Info(reflect.TypeOf(param))
-	//log.Fatal(param)
 
 	//cache
 	ca := cache.New(10*time.Minute, 30*time.Second)
 
 	if x, found := ca.Get(param); found {
 		log.Print("Cache Use !")
-		fmt.Fprintf(w, "%s", x)
+		w.Write(x.([]byte))
 		return
 	}
 
@@ -98,18 +94,17 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var t Itemslice
-	//t := Itemslice{}  //->【TBD】上の書き方との違いを調べる
+	t := Itemslice{}
 
 	for _, bookmark := range v.Bookmarks {
 		datetime, _ := time.Parse(time.RFC3339, bookmark.Date)
 
 		title := bookmark.Title
 		url := bookmark.Link
-		date := datetime.Format("2006/01/00 10:00:00")
+		date := datetime.Format("2006/02/00 10:00:00")
 		bookmark := bookmark.Count
 
-		//URL Validation. ( Valid url is http://tabelog.com/tokyo/A1301/A130101/13002457/ )
+		//URL Validation. 時々特集記事が上がってくる( Valid url is http://tabelog.com/tokyo/A1301/A130101/13002457/ )
 		matchPattern := "^http:\\/\\/tabelog\\.com\\/[a-zA-Z0-9]+\\/[a-zA-Z0-9]+\\/[a-zA-Z0-9]+\\/[a-zA-Z0-9]+(|\\/)$"
 		if m, _ := regexp.MatchString(matchPattern, url); !m {
 			continue
@@ -122,45 +117,47 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	response := getGroumetInfo(t)
 
 	b, err_json := json.Marshal(response)
-
 	if err_json != nil {
 		fmt.Println("json err:", err_json)
 	}
 
 	//Cache Set
-	ca.Set(param, b, cache.NoExpiration)
-
+	ca.Set(param, b, cache.DefaultExpiration)
 	if _, ca_result := ca.Get(param); ca_result {
-		fmt.Print("Cache Correct!")
+		fmt.Println("Cache Correct!", param)
 	}
 
 	//output
-	fmt.Fprintf(w, "%s", b)
+	w.Write(b)
 }
 
-/*
-tabelogのユーザー投稿の最初画像をスクレイピング
-*/
+//tabelogのユーザー投稿の最初画像をスクレイピング
 func getGroumetInfo(t Itemslice) Itemslice {
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	log.Printf("goroutine run %s", strconv.Itoa(len(t.Items)))
 	s := time.Now()
 
-	var wg sync.WaitGroup
+	//var wg sync.WaitGroup
+
 	//make channel
+	resultCh := make(chan bool, 1)
 
-	log.Printf(strconv.Itoa(len(t.Items)))
+	//context
+	//ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx = context.WithValue(ctx, "Itemslice", t)
+	defer cancel()
 
-	for i, v := range t.Items {
+	for i, _ := range t.Items {
 
-		request_url := v.Url
+		//wg.Add(1)
 
-		wg.Add(1)
+		go func(ctx context.Context, i int) {
 
-		go func(request_url string, i int) {
+			//defer wg.Done()
 
-			defer wg.Done()
-
+			request_url := ctx.Value("Itemslice").(Itemslice).Items[i].Url
 			image, err_request := goquery.NewDocument(request_url + "dtlphotolst/1/smp2/D-like/")
 
 			if err_request != nil {
@@ -180,14 +177,23 @@ func getGroumetInfo(t Itemslice) Itemslice {
 			t.Items[i].Star = star
 			t.Items[i].Station = station
 
-			//log.Print(request_url + " , " + img_url + " , " + star + " , " + station)
 			log.Printf("running %d goroutines", runtime.NumGoroutine())
 
-		}(request_url, i)
+			resultCh <- true
+
+			select {
+			case <-ctx.Done():
+				log.Println("log", ctx.Err(), i)
+			}
+
+		}(ctx, i)
 
 	} //end t.Items for loop
 
-	wg.Wait()
+	for _ = range t.Items {
+		<-resultCh
+	}
+	//wg.Wait()
 
 	e := time.Now().Sub(s)
 	fmt.Println(e)
@@ -208,22 +214,17 @@ func getHatebuRssFeed(param string) []byte {
 		log.Fatal(err)
 	}
 
-	// 関数を抜ける際に必ずresponseをcloseするようにdeferでcloseを呼ぶ
 	defer resp.Body.Close()
 
-	// Responseの内容を使用して後続処理を行う
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	return body
-
 }
 
 func main() {
-	//godo (task runner)
-	//	do.Godo(tasks)
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
@@ -232,11 +233,3 @@ func main() {
 
 	http.ListenAndServe(":5000", mux)
 }
-
-//func tasks(p *do.Project) {
-//	p.Task("server", nil, func(c *do.Context) {
-//		// rebuilds and restarts when a watched file changes
-//		c.Start("main.go", do.M{"$in": "./"})
-//	}).Src("*.go", "**/*.go").
-//		Debounce(3000)
-//}
