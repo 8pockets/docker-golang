@@ -134,71 +134,63 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 //tabelogのユーザー投稿の最初画像をスクレイピング
 func getGroumetInfo(t Itemslice) Itemslice {
 
-	runtime.GOMAXPROCS(runtime.NumCPU())
 	log.Printf("goroutine run %s", strconv.Itoa(len(t.Items)))
 	s := time.Now()
 
-	//var wg sync.WaitGroup
-
 	//make channel
-	resultCh := make(chan bool, 1)
+	resultCh := make(chan error, 1)
 
 	//context
-	//ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Millisecond)
 	ctx = context.WithValue(ctx, "Itemslice", t)
 	defer cancel()
 
 	for i, _ := range t.Items {
-
-		//wg.Add(1)
-
-		go func(ctx context.Context, i int) {
-
-			//defer wg.Done()
-
-			request_url := ctx.Value("Itemslice").(Itemslice).Items[i].Url
-			image, err_request := goquery.NewDocument(request_url + "dtlphotolst/1/smp2/D-like/")
-
-			if err_request != nil {
-				fmt.Print("url scarapping failed")
-			}
-
-			//Parse HTML By goquery module
-			img_url, exists := image.Find("ul.rstdtl-photo__content > li.thum-photobox .thum-photobox__img img").First().Attr("src")
-			star := image.Find("div.rdheader-rating__score b.tb-rating__val span").First().Text()
-			station := image.Find("div.rdheader-subinfo div.linktree__parent span").First().Text()
-
-			if exists != true {
-				fmt.Print("Not Existing Data: " + request_url)
-			}
-
-			t.Items[i].Img_url = img_url
-			t.Items[i].Star = star
-			t.Items[i].Station = station
-
-			log.Printf("running %d goroutines", runtime.NumGoroutine())
-
-			resultCh <- true
-
-			select {
-			case <-ctx.Done():
-				log.Println("log", ctx.Err(), i)
-			}
-
-		}(ctx, i)
-
-	} //end t.Items for loop
-
-	for _ = range t.Items {
-		<-resultCh
+		go func(i int) { resultCh <- getTabelogData(ctx, i) }(i)
 	}
-	//wg.Wait()
+
+	for i, _ := range t.Items {
+		select {
+		case <-resultCh:
+			log.Println("done")
+		case <-ctx.Done():
+			log.Println(ctx.Err(), i)
+		}
+	}
 
 	e := time.Now().Sub(s)
 	fmt.Println(e)
 
 	return t
+}
+
+func getTabelogData(ctx context.Context, i int) error {
+
+	t := ctx.Value("Itemslice").(Itemslice)
+	request_url := t.Items[i].Url
+
+	image, err_request := goquery.NewDocument(request_url + "dtlphotolst/1/smp2/D-like/")
+
+	if err_request != nil {
+		fmt.Print("url scarapping failed")
+	}
+
+	//Parse HTML By goquery module
+	img_url, exists := image.Find("ul.rstdtl-photo__content > li.thum-photobox .thum-photobox__img img").First().Attr("src")
+	star := image.Find("div.rdheader-rating__score b.tb-rating__val span").First().Text()
+	station := image.Find("div.rdheader-subinfo div.linktree__parent span").First().Text()
+
+	if exists != true {
+		fmt.Print("Not Existing Data: " + request_url)
+	}
+
+	t.Items[i].Img_url = img_url
+	t.Items[i].Star = star
+	t.Items[i].Station = station
+
+	log.Printf("running %d goroutines", runtime.NumGoroutine())
+
+	return ctx.Err()
 }
 
 func getHatebuRssFeed(param string) []byte {
