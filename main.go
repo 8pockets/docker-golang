@@ -18,7 +18,7 @@ import (
 	"net/url"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/patrickmn/go-cache"
+	//"github.com/golang/groupcache"
 	"goji.io"
 	"goji.io/pat"
 	"golang.org/x/net/context"
@@ -55,11 +55,12 @@ type Itemslice struct {
 
 func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 
-	w.Header().Set("Content-Type", "application/json")
-
 	//URLの中の変数をとる時に使う
 	//	name := pat.Param(ctx, "name")
 
+	//if q, ok := r.URL.Query()["area"]; ok {
+	//	fmt.Printf("Error * area key %#v does not exist.", q)
+	//}
 	q := r.URL.Query()["area"]
 
 	//第４引数を-1にすることで対象範囲が全てになる
@@ -73,28 +74,67 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	//変数の型を調べる
 	//log.Info(reflect.TypeOf(param))
 
-	//cache
-	ca := cache.New(10*time.Minute, 30*time.Second)
+	//hatebu API request
+	i := hatebu(param)
 
-	if x, found := ca.Get(param); found {
-		log.Print("Cache Use !")
-		w.Write(x.([]byte))
-		return
+	//お店のデータを取得(画像・星・最寄駅)
+	response := tabelog(i)
+
+	b, err_json := json.Marshal(response)
+	if err_json != nil {
+		fmt.Println("json err:", err_json)
 	}
 
-	//hatebu API request
-	body := getHatebuRssFeed(param)
+	//cache
+	//responseCache := groupcache.NewGroup("responseCache", 64<<20, groupcache.GetterFunc(
+	//	func(ctx groupcache.Context, key string, dest groupcache.Sink) error {
+	//		dest.SetString(b)
+	//		return nil
+	//	}))
+
+	//response := ""
+	//if cache_err := responseCache.Get(nil, "response", groupcache.StringSink(&response)); cache_err != nil {
+	//	fmt.Println("Cache err", cache_err)
+	//}
+	//if response != "" {
+	//	w.Write(response)
+	//	return
+	//}
+
+	//output
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
+}
+
+func hatebu(param string) Itemslice {
+
+	//APi Request
+	values := url.Values{}
+	values.Set("mode", "rss")
+	values.Add("sort", "count")
+	values.Add("url", TABELOG_URL+param)
+
+	resp, err := http.Get(HATEBU_URL + "?" + values.Encode())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	//XML Parse
 	//ex.) https://golang.org/pkg/encoding/xml/#example_Unmarshal
 	v := TabelogXml{}
-	err := xml.Unmarshal([]byte(body), &v)
+	err = xml.Unmarshal([]byte(body), &v)
 	if err != nil {
 		fmt.Printf("error: %v", err)
-		return
 	}
 
-	t := Itemslice{}
+	i := Itemslice{}
 
 	for _, bookmark := range v.Bookmarks {
 		datetime, _ := time.Parse(time.RFC3339, bookmark.Date)
@@ -110,29 +150,14 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		t.Items = append(t.Items, Item{Title: title, Url: url, Date: date, Bookmark: bookmark})
+		i.Items = append(i.Items, Item{Title: title, Url: url, Date: date, Bookmark: bookmark})
 	}
 
-	//お店のデータを取得(画像・星・最寄駅)
-	response := getGroumetInfo(t)
-
-	b, err_json := json.Marshal(response)
-	if err_json != nil {
-		fmt.Println("json err:", err_json)
-	}
-
-	//Cache Set
-	ca.Set(param, b, cache.DefaultExpiration)
-	if _, ca_result := ca.Get(param); ca_result {
-		fmt.Println("Cache Correct!", param)
-	}
-
-	//output
-	w.Write(b)
+	return i
 }
 
 //tabelogのユーザー投稿の最初画像をスクレイピング
-func getGroumetInfo(t Itemslice) Itemslice {
+func tabelog(t Itemslice) Itemslice {
 
 	log.Printf("goroutine run %s", strconv.Itoa(len(t.Items)))
 	s := time.Now()
@@ -146,7 +171,9 @@ func getGroumetInfo(t Itemslice) Itemslice {
 	defer cancel()
 
 	for i, _ := range t.Items {
-		go func(i int) { resultCh <- getTabelogData(ctx, i) }(i)
+		go func(i int) {
+			resultCh <- getTabelogData(ctx, i)
+		}(i)
 	}
 
 	for i, _ := range t.Items {
@@ -169,7 +196,7 @@ func getTabelogData(ctx context.Context, i int) error {
 	t := ctx.Value("Itemslice").(Itemslice)
 	request_url := t.Items[i].Url
 
-	image, err_request := goquery.NewDocument(request_url + "dtlphotolst/1/smp2/D-like/")
+	image, err_request := goquery.NewDocument(request_url + "dtlphotolst/1/smp2/")
 
 	if err_request != nil {
 		fmt.Print("url scarapping failed")
@@ -191,29 +218,6 @@ func getTabelogData(ctx context.Context, i int) error {
 	log.Printf("running %d goroutines", runtime.NumGoroutine())
 
 	return ctx.Err()
-}
-
-func getHatebuRssFeed(param string) []byte {
-
-	//APi Request
-	values := url.Values{}
-	values.Set("mode", "rss")
-	values.Add("sort", "count")
-	values.Add("url", TABELOG_URL+param)
-
-	resp, err := http.Get(HATEBU_URL + "?" + values.Encode())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return body
 }
 
 func main() {
