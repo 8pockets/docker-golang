@@ -1,0 +1,56 @@
+hash: f292dbd85aac6ebd124be3b8fe50dda31eecf0a2f1fd0a1e89808559196fbaef
+updated: 2016-10-29T14:11:18.206463025+09:00
+imports:
+- name: github.com/howeyc/gopass
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+- name: github.com/labstack/echo
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+  subpackages:
+  - engine/standard
+  - context
+  - engine
+  - log
+- name: github.com/labstack/gommon
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+  subpackages:
+  - log
+  - color
+- name: github.com/mattn/go-colorable
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+- name: github.com/mattn/go-isatty
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+- name: github.com/mgutz/ansi
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+- name: github.com/mgutz/minimist
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+- name: github.com/mgutz/str
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+- name: github.com/mgutz/to
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+- name: github.com/MichaelTJones/walk
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+- name: github.com/nozzle/throttler
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+- name: github.com/valyala/fasttemplate
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+- name: golang.org/x/crypto
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+  subpackages:
+  - ssh/terminal
+- name: golang.org/x/net
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+  subpackages:
+  - context
+- name: golang.org/x/sys
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+  subpackages:
+  - unix
+- name: gopkg.in/godo.v2
+  version: 201367c7be68e2af9bbabb9f770cd4ee762a680a
+  subpackages:
+  - cmd/godo
+  - glob
+  - util
+  - watcher
+  - watcher/fswatch
+devImports: []

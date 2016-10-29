@@ -1,0 +1,4 @@
+package: .
+import:
+- package: github.com/labstack/echo
+- package: gopkg.in/godo.v2/cmd/godo
