@@ -1,11 +1,5 @@
 package: .
 import:
 - package: github.com/PuerkitoBio/goquery
-- package: github.com/patrickmn/go-cache
-- package: goji.io
-  subpackages:
-  - pat
-- package: golang.org/x/net
-  subpackages:
-  - context
-- package: gopkg.in/godo.v2
+- package: github.com/labstack/echo
+- package: gopkg.in/godo.v2/cmd/godo

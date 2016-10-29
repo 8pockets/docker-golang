@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	//"sync"
+	"context"
 	"time"
 
 	"encoding/json"
@@ -18,10 +19,8 @@ import (
 	"net/url"
 
 	"github.com/PuerkitoBio/goquery"
-	//"github.com/golang/groupcache"
-	"goji.io"
-	"goji.io/pat"
-	"golang.org/x/net/context"
+	"github.com/labstack/echo"
+	"github.com/labstack/echo/engine/standard"
 )
 
 const (
@@ -53,26 +52,22 @@ type Itemslice struct {
 	Items []Item
 }
 
-func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+func groumet(c echo.Context) error {
 
-	//URLの中の変数をとる時に使う
-	//	name := pat.Param(ctx, "name")
-
-	//if q, ok := r.URL.Query()["area"]; ok {
-	//	fmt.Printf("Error * area key %#v does not exist.", q)
-	//}
-	q := r.URL.Query()["area"]
+	q := c.QueryParam("area")
+	if q == "" {
+		log.Printf("Error Params")
+	}
 
 	//第４引数を-1にすることで対象範囲が全てになる
-	area := strings.Replace(q[0], ".", "/", -1)
+	area := strings.Replace(q, ".", "/", -1)
 
 	param_slice := strings.Split(area, "/")
 
 	//最初から３つ目までのパラメータだけ使用
 	param := strings.Join(param_slice[:3], "/")
 
-	//変数の型を調べる
-	//log.Info(reflect.TypeOf(param))
+	//log.Info(reflect.TypeOf(param)) //変数の型を調べる
 
 	//hatebu API request
 	i := hatebu(param)
@@ -85,25 +80,8 @@ func groumet(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		fmt.Println("json err:", err_json)
 	}
 
-	//cache
-	//responseCache := groupcache.NewGroup("responseCache", 64<<20, groupcache.GetterFunc(
-	//	func(ctx groupcache.Context, key string, dest groupcache.Sink) error {
-	//		dest.SetString(b)
-	//		return nil
-	//	}))
-
-	//response := ""
-	//if cache_err := responseCache.Get(nil, "response", groupcache.StringSink(&response)); cache_err != nil {
-	//	fmt.Println("Cache err", cache_err)
-	//}
-	//if response != "" {
-	//	w.Write(response)
-	//	return
-	//}
-
 	//output
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(b)
+	return c.String(http.StatusOK, string(b))
 }
 
 func hatebu(param string) Itemslice {
@@ -172,7 +150,7 @@ func tabelog(t Itemslice) Itemslice {
 
 	for i, _ := range t.Items {
 		go func(i int) {
-			resultCh <- getTabelogData(ctx, i)
+			resultCh <- tabelogData(ctx, i)
 		}(i)
 	}
 
@@ -191,7 +169,7 @@ func tabelog(t Itemslice) Itemslice {
 	return t
 }
 
-func getTabelogData(ctx context.Context, i int) error {
+func tabelogData(ctx context.Context, i int) error {
 
 	t := ctx.Value("Itemslice").(Itemslice)
 	request_url := t.Items[i].Url
@@ -224,8 +202,7 @@ func main() {
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	mux := goji.NewMux()
-	mux.HandleFuncC(pat.Get("/groumet/list/"), groumet)
-
-	http.ListenAndServe(":5000", mux)
+	e := echo.New()
+	e.GET("/groumet/list/", groumet)
+	e.Run(standard.New(":5000"))
 }

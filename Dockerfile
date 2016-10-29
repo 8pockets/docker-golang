@@ -1,18 +1,14 @@
-FROM golang:1.6
+FROM golang:1.7
+ENV GOPATH /go
 
-RUN go get -u gopkg.in/godo.v2/cmd/godo && \
-go get github.com/PuerkitoBio/goquery && \
-go get github.com/patrickmn/go-cache && \
-go get goji.io && \
-go get golang.org/x/net/context && \
-go get github.com/golang/groupcache
+RUN curl https://glide.sh/get | sh
 
-#RUN go get github.com/Masterminds/glide && \
-#export GO15VENDOREXPERIMENT=1 && \
-#/go/bin/glide up
-
+#glideを使うプロジェクトは$GOPATH/src/ディレクトリ以下に作成
 WORKDIR /go/src/app
+COPY glide.yaml /go/src/app/glide.yaml
+RUN glide install -v
 
 EXPOSE 5000
 
+RUN go get -u gopkg.in/godo.v2/cmd/godo
 CMD ["/go/bin/godo", "server", "--watch"]
